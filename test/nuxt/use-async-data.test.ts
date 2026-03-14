@@ -13,14 +13,14 @@ import { clearNuxtData, refreshNuxtData, useAsyncData, useLazyAsyncData, useNuxt
 import { NuxtPage } from '#components'
 
 registerEndpoint('/api/test', defineEventHandler(event => ({
-  method: event.method,
-  headers: Object.fromEntries(event.headers.entries()),
+  method: event.req.method,
+  headers: Object.fromEntries(event.req.headers.entries()),
 })))
 
 registerEndpoint('/api/sleep', defineEventHandler((event) => {
   return new Promise((resolve) => {
     setTimeout(() => {
-      resolve({ method: event.method, headers: Object.fromEntries(event.headers.entries()) })
+      resolve({ method: event.req.method, headers: Object.fromEntries(event.req.headers.entries()) })
     }, 100)
   })
 }))
@@ -109,10 +109,10 @@ describe('useAsyncData', () => {
 
     const { data, error, status, pending } = await useAsyncData(uniqueKey, () => Promise.reject(new Error('test')), { default: () => 'default' })
     expect(data.value).toMatchInlineSnapshot('"default"')
-    expect(error.value).toMatchInlineSnapshot('[Error: test]')
+    expect(error.value).toMatchInlineSnapshot('[HTTPError: test]')
     expect(status.value).toBe('error')
     expect(pending.value).toBe(false)
-    expect(useNuxtApp().payload._errors[uniqueKey]).toMatchInlineSnapshot('[Error: test]')
+    expect(useNuxtApp().payload._errors[uniqueKey]).toMatchInlineSnapshot('[HTTPError: test]')
 
     const { data: syncedData, error: syncedError, status: syncedStatus, pending: syncedPending } = await useAsyncData(uniqueKey, () => ({} as any), { immediate: false })
 
@@ -247,6 +247,31 @@ describe('useAsyncData', () => {
     expect(error.value).toBe(undefined)
     expect(pending.value).toBe(false)
     expect(status.value).toBe('idle')
+  })
+
+  it('should not overwrite cleared data when in-flight request completes', async () => {
+    vi.useFakeTimers()
+
+    const { data, status, refresh } = await useAsyncData(uniqueKey, () => Promise.resolve('initial'))
+    expect(data.value).toBe('initial')
+
+    // Start a slow refresh
+    const refreshPromise = refresh()
+
+    // Clear while the refresh is in flight
+    clearNuxtData(uniqueKey)
+    expect(data.value).toBeUndefined()
+    expect(status.value).toBe('idle')
+
+    // Let the refresh complete
+    vi.advanceTimersByTime(0)
+    await refreshPromise
+
+    // Data should stay cleared
+    expect(data.value).toBeUndefined()
+    expect(status.value).toBe('idle')
+
+    vi.useRealTimers()
   })
 
   it('should have correct status for previously fetched requests', async () => {

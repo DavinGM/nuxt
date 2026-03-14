@@ -3,7 +3,8 @@ import { createRenderer } from 'vue-bundle-renderer/runtime'
 import type { Manifest, PrecomputedData } from 'vue-bundle-renderer'
 import { renderToString as _renderToString } from 'vue/server-renderer'
 import { propsToString } from '@unhead/vue/server'
-import { useRuntimeConfig } from 'nitropack/runtime'
+import { useRuntimeConfig } from 'nitro/runtime-config'
+
 import type { NuxtSSRContext } from 'nuxt/app'
 
 // @ts-expect-error virtual file
@@ -41,7 +42,7 @@ interface Renderer {
 }
 
 // -- SSR Renderer --
-export const getSSRRenderer = lazyCachedFunction(async (): Promise<Renderer> => {
+export const getSSRRenderer: () => Promise<Renderer> = lazyCachedFunction(async (): Promise<Renderer> => {
   // Load server bundle
   const createSSRApp = await getServerEntry()
   if (!createSSRApp) { throw new Error('Server bundle is not available') }
@@ -99,7 +100,7 @@ const getSPARenderer = lazyCachedFunction(async (): Promise<Renderer> => {
   const result = await renderer.renderToString({})
 
   const renderToString = (ssrContext: NuxtSSRContext) => {
-    const config = useRuntimeConfig(ssrContext.event)
+    const config = useRuntimeConfig()
     ssrContext.modules ||= new Set<string>()
     ssrContext.payload.serverRendered = false
     ssrContext.config = {
@@ -130,4 +131,4 @@ export function getRenderer (ssrContext: NuxtSSRContext): Promise<Renderer> {
 }
 
 // @ts-expect-error file will be produced after app build
-export const getSSRStyles = lazyCachedFunction((): Promise<Record<string, () => Promise<string[]>>> => import('#build/dist/server/styles.mjs').then(r => r.default || r))
+export const getSSRStyles: () => Promise<Record<string, () => Promise<string[]>>> = lazyCachedFunction((): Promise<Record<string, () => Promise<string[]>>> => import('#build/dist/server/styles.mjs').then(r => r.default || r))

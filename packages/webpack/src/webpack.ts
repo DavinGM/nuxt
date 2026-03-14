@@ -145,10 +145,6 @@ function wdmToH3Handler (devMiddleware: webpackDevMiddleware.API<IncomingMessage
       return
     }
 
-    event.context.webpack = {
-      ...event.context.webpack,
-      devMiddleware: devMiddleware.context,
-    }
     const body = await new Promise((resolve, reject) => {
       // @ts-expect-error handle injected methods
       res.stream = (stream) => {
@@ -231,4 +227,12 @@ type GenericHandler = (event: H3V1Event | H3V2Event) => unknown | Promise<unknow
 
 function defineEventHandler (handler: GenericHandler): GenericHandler {
   return Object.assign(handler, { __is_handler__: true })
+}
+
+declare module 'srvx' {
+  interface ServerRequestContext {
+    webpack?: {
+      devMiddleware?: webpackDevMiddleware.Context<IncomingMessage, ServerResponse>
+    }
+  }
 }

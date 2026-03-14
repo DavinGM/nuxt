@@ -13,6 +13,7 @@ const commonSettings: NuxtConfig = {
   routeRules: {
     '/specific-prerendered': { prerender: true },
     '/pre/test': { redirect: '/' },
+    '/pre/spa/**': { prerender: true, ssr: false },
     '/pre/**': { prerender: true },
   },
   experimental: {
@@ -24,8 +25,15 @@ const commonSettings: NuxtConfig = {
 }
 
 const projects: Record<string, NuxtConfig> = {
-  'nuxt': {},
+  'nuxt': {
+    future: {
+      compatibilityVersion: 5,
+    },
+  },
   'nuxt-legacy': {
+    future: {
+      compatibilityVersion: 4,
+    },
     experimental: {
       alwaysRunFetchOnKeyChange: true,
     },
