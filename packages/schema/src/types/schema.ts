@@ -1071,14 +1071,6 @@ export interface ConfigSchema {
     asyncEntry: boolean
 
     /**
-     * Externalize `vue`, `@vue/*` and `vue-router` when building.
-     *
-     * @default true
-     * @see [Nuxt Issue #13632](https://github.com/nuxt/nuxt/issues/13632)
-     */
-    externalVue: boolean
-
-    /**
      * Enable accessing `appConfig` from server routes.
      *
      * @default true
@@ -1627,6 +1619,13 @@ export interface ConfigSchema {
      * @default true with compatibilityVersion >= 5
      */
     clientNodePlaceholder: boolean
+
+    /**
+     * When enabled, Nuxt will clear build-related hooks after bundling, freeing
+     * memory before the Nitro build. Disable this if you need to call `build()`
+     * multiple times on the same Nuxt instance (e.g. in benchmarks).
+     */
+    clearBuildHooks: boolean
   }
 
   /**

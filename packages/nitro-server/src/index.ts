@@ -11,12 +11,11 @@ import { joinURL, withTrailingSlash } from 'ufo'
 import nuxtPkg from 'nuxt/package.json' with { type: 'json' }
 import { build, copyPublicAssets, createDevServer, createNitro, prepare, prerender, writeTypes } from 'nitro/builder'
 import type { Nitro, NitroConfig, NitroRouteRules } from 'nitro/types'
-import { addPlugin, addTemplate, addVitePlugin, createIsIgnored, findPath, getDirectory, getLayerDirectories, logger, resolveAlias, resolveIgnorePatterns, resolveNuxtModule } from '@nuxt/kit'
+import { addPlugin, addTemplate, addVitePlugin, createIsIgnored, ensureDependencyInstalled, findPath, getDirectory, getLayerDirectories, logger, resolveAlias, resolveIgnorePatterns, resolveNuxtModule } from '@nuxt/kit'
 import escapeRE from 'escape-string-regexp'
 import { defu } from 'defu'
 import { defineEventHandler, dynamicEventHandler, handleCors } from 'nitro/h3'
-import { addDependency } from 'nypm'
-import { hasTTY, isCI, isWindows } from 'std-env'
+import { isWindows } from 'std-env'
 import { ImpoundPlugin } from 'impound'
 import { resolveModulePath } from 'exsolve'
 import { runtimeDependencies } from 'nitro/meta'
@@ -279,7 +278,7 @@ export async function bundle (nuxt: Nuxt & { _nitro?: Nitro }): Promise<void> {
     sourcemap: !!nuxt.options.sourcemap.server,
     traceDeps: [
       // force include files used in generated code from the runtime-compiler
-      ...(nuxt.options.vue.runtimeCompiler && !nuxt.options.experimental.externalVue)
+      ...(nuxt.options.vue.runtimeCompiler)
         ? [
             ...nuxt.options.modulesDir.reduce<string[]>((targets, path) => {
               const serverRendererPath = resolve(path, 'vue/server-renderer/index.js')
@@ -293,7 +292,6 @@ export async function bundle (nuxt: Nuxt & { _nitro?: Nitro }): Promise<void> {
       ...(nuxt.options.dev
         ? []
         : [
-            ...nuxt.options.experimental.externalVue ? [] : ['vue', '@vue/'],
             '@nuxt/',
             nuxt.options.buildDir,
           ]),
@@ -308,7 +306,7 @@ export async function bundle (nuxt: Nuxt & { _nitro?: Nitro }): Promise<void> {
     ],
     alias: {
       // Vue 3 mocks
-      ...nuxt.options.vue.runtimeCompiler || nuxt.options.experimental.externalVue
+      ...nuxt.options.vue.runtimeCompiler
         ? {}
         : {
             'estree-walker': mockProxy,
@@ -543,39 +541,17 @@ export async function bundle (nuxt: Nuxt & { _nitro?: Nitro }): Promise<void> {
   // Add decorator support via Babel when experimental.decorators is enabled.
   if (nuxt.options.experimental.decorators) {
     const nitroDecoratorDeps = ['@rollup/plugin-babel', '@babel/plugin-proposal-decorators']
-    let hasDeps = true
-    for (const pkg of nitroDecoratorDeps) {
-      try {
-        await import(pkg)
-      } catch (_err) {
-        const err = _err as NodeJS.ErrnoException
-        if (err.code !== 'ERR_MODULE_NOT_FOUND' && err.code !== 'MODULE_NOT_FOUND') {
-          throw err
-        }
-        if (!isCI && hasTTY) {
-          logger.info('Decorator support requires additional dependencies.')
-          const shouldInstall = await logger.prompt(`Install \`${nitroDecoratorDeps.join('` and `')}\`?`, {
-            type: 'confirm',
-            initial: true,
-          })
-          if (shouldInstall) {
-            logger.start(`Installing ${nitroDecoratorDeps.map(d => `\`${d}\``).join(' and ')}...`)
-            await addDependency(nitroDecoratorDeps, {
-              dev: true,
-              cwd: nuxt.options.rootDir,
-              silent: true,
-            })
-            logger.info('Rerun Nuxt to enable decorator support.')
-            process.exit(1)
-          }
-        }
-        logger.warn(`Cannot find \`${pkg}\`. Install \`${nitroDecoratorDeps.join('` and `')}\` to enable decorator support.`)
-        hasDeps = false
-        break
-      }
+    const result = await ensureDependencyInstalled(nitroDecoratorDeps, {
+      rootDir: nuxt.options.rootDir,
+      searchPaths: nuxt.options.modulesDir,
+      from: import.meta.url,
+    })
+
+    if (result !== true) {
+      logger.warn(`Install ${result.map(d => `\`${d}\``).join(' and ')} to enable decorator support.`)
     }
 
-    if (hasDeps) {
+    if (result === true) {
       const { babel } = await import('@rollup/plugin-babel')
       nitroConfig.rollupConfig!.plugins = toArray(await nitroConfig.rollupConfig!.plugins || [])
       nitroConfig.rollupConfig!.plugins!.unshift(
@@ -645,6 +621,19 @@ export async function bundle (nuxt: Nuxt & { _nitro?: Nitro }): Promise<void> {
     watchOptions: {
       ignored: [isIgnored],
     },
+  }
+
+  const cacheDriverPath = join(distDir, 'runtime/utils/cache-driver.js')
+  const cacheDriverOption = isWindows ? pathToFileURL(cacheDriverPath).href : cacheDriverPath
+
+  // Use hash-based cache driver for runtime payload cache to avoid conflicts when
+  // path is both a file and a directory prefix: https://github.com/nuxt/nuxt/issues/34547
+  if (nuxt.options.dev) {
+    const payloadCacheDir = resolve(nuxt.options.buildDir, 'cache/nuxt/payload')
+    nitroConfig.devStorage['cache:nuxt:payload'] ||= {
+      driver: cacheDriverOption,
+      base: payloadCacheDir,
+    }
   }
 
   // Hoist types for nitro implicit dependencies
@@ -735,12 +724,11 @@ export async function bundle (nuxt: Nuxt & { _nitro?: Nitro }): Promise<void> {
   })
 
   const cacheDir = resolve(nuxt.options.buildDir, 'cache/nitro/prerender')
-  const cacheDriverPath = join(distDir, 'runtime/utils/cache-driver.js')
   await fsp.rm(cacheDir, { recursive: true, force: true }).catch(() => {})
   nitro.options._config.storage = defu(nitro.options._config.storage, {
     'internal:nuxt:prerender': {
       // TODO: resolve upstream where file URLs are not being resolved/inlined correctly
-      driver: isWindows ? pathToFileURL(cacheDriverPath).href : cacheDriverPath,
+      driver: cacheDriverOption,
       base: cacheDir,
     },
   })
